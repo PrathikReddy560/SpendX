@@ -1,0 +1,13 @@
+# SpendX Mobile App - Python Requirements
+# This file lists Python dependencies used for development tooling
+
+# None required - this is a React Native / Node.js project
+# All dependencies are managed via package.json
+
+# For development environment setup:
+# 1. Install Node.js 18+
+# 2. Run: npm install
+# 3. Run: npx expo start
+
+# This requirements.txt is provided for compatibility with 
+# Python-based CI/CD tools and documentation generators.
