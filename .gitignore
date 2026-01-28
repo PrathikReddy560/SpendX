@@ -5,3 +5,17 @@ __pycache__/
 *.pyc
 .env
 venv/
+
+# Node modules
+node_modules/
+mobile-app/node_modules/
+
+# Expo
+.expo/
+mobile-app/.expo/
+dist/
+web-build/
+
+# OS files
+.DS_Store
+Thumbs.db
