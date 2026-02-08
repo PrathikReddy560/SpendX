@@ -1,8 +1,8 @@
-// Premium Login Screen
-// Enhanced login with glassmorphism, animations, and social auth
+// Premium Login Screen - API Connected
+// Enhanced login with real authentication
 
-import React, { useState, useContext } from 'react';
-import { View, StyleSheet, Dimensions, Platform, Pressable, KeyboardAvoidingView, ScrollView } from 'react-native';
+import React, { useState } from 'react';
+import { View, StyleSheet, Dimensions, Platform, Pressable, KeyboardAvoidingView, ScrollView, Alert } from 'react-native';
 import { Text, TextInput, useTheme } from 'react-native-paper';
 import { useRouter, Link } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -14,6 +14,7 @@ import AnimatedButton from '../../src/components/ui/AnimatedButton';
 import GlassCard from '../../src/components/ui/GlassCard';
 import { Colors } from '../../src/config/colors';
 import { Spacing, BorderRadius } from '../../src/config/theme';
+import { useAuth } from '../../src/hooks/useAuth';
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -22,24 +23,39 @@ export default function LoginScreen() {
   const { isMobile, isDesktop } = useResponsive();
   const isDark = theme.dark;
   const colors = isDark ? Colors.dark : Colors.light;
+  const { login, isLoading } = useAuth();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleLogin = async () => {
-    setLoading(true);
-    // Simulate API call
-    setTimeout(() => {
-      setLoading(false);
-      router.replace('/(app)');
-    }, 1500);
+    setError(null);
+
+    // Basic validation
+    if (!email.trim()) {
+      setError('Please enter your email');
+      return;
+    }
+    if (!password.trim()) {
+      setError('Please enter your password');
+      return;
+    }
+
+    const result = await login({ email: email.trim(), password });
+
+    if (!result.success) {
+      setError(result.error || 'Login failed. Please try again.');
+    }
   };
 
   const handleSocialLogin = (provider: string) => {
-    console.log(`Login with ${provider}`);
-    // Implement social auth
+    Alert.alert(
+      'Coming Soon',
+      `${provider} login will be available in a future update.`,
+      [{ text: 'OK' }]
+    );
   };
 
   return (
@@ -111,18 +127,30 @@ export default function LoginScreen() {
               Sign in to continue managing your finances
             </Text>
 
+            {/* Error Message */}
+            {error && (
+              <Animated.View entering={FadeIn.duration(300)}>
+                <View style={[styles.errorContainer, { backgroundColor: `${colors.error}15` }]}>
+                  <MaterialCommunityIcons name="alert-circle" size={20} color={colors.error} />
+                  <Text style={[styles.errorText, { color: colors.error }]}>{error}</Text>
+                </View>
+              </Animated.View>
+            )}
+
             {/* Email Input */}
             <View style={styles.inputContainer}>
               <TextInput
                 label="Email"
                 value={email}
-                onChangeText={setEmail}
+                onChangeText={(text) => { setEmail(text); setError(null); }}
                 mode="outlined"
                 keyboardType="email-address"
                 autoCapitalize="none"
+                autoComplete="email"
                 left={<TextInput.Icon icon="email-outline" />}
                 style={styles.input}
                 outlineStyle={{ borderRadius: BorderRadius.lg }}
+                error={!!error && !email.trim()}
               />
             </View>
 
@@ -131,9 +159,10 @@ export default function LoginScreen() {
               <TextInput
                 label="Password"
                 value={password}
-                onChangeText={setPassword}
+                onChangeText={(text) => { setPassword(text); setError(null); }}
                 mode="outlined"
                 secureTextEntry={!showPassword}
+                autoComplete="password"
                 left={<TextInput.Icon icon="lock-outline" />}
                 right={
                   <TextInput.Icon
@@ -143,6 +172,7 @@ export default function LoginScreen() {
                 }
                 style={styles.input}
                 outlineStyle={{ borderRadius: BorderRadius.lg }}
+                error={!!error && !password.trim()}
               />
             </View>
 
@@ -157,7 +187,7 @@ export default function LoginScreen() {
             <AnimatedButton
               title="Sign In"
               onPress={handleLogin}
-              loading={loading}
+              loading={isLoading}
               fullWidth
               size="lg"
               icon="login"
@@ -177,13 +207,13 @@ export default function LoginScreen() {
             <View style={styles.socialRow}>
               <Pressable
                 style={[styles.socialButton, { backgroundColor: colors.surfaceVariant }]}
-                onPress={() => handleSocialLogin('google')}
+                onPress={() => handleSocialLogin('Google')}
               >
                 <MaterialCommunityIcons name="google" size={24} color="#DB4437" />
               </Pressable>
               <Pressable
                 style={[styles.socialButton, { backgroundColor: colors.surfaceVariant }]}
-                onPress={() => handleSocialLogin('apple')}
+                onPress={() => handleSocialLogin('Apple')}
               >
                 <MaterialCommunityIcons
                   name="apple"
@@ -216,10 +246,10 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    flexDirection: 'column', // Mobile: vertical stacking
+    flexDirection: 'column',
   },
   containerDesktop: {
-    flexDirection: 'row', // Desktop: side by side
+    flexDirection: 'row',
   },
   gradientBg: {
     justifyContent: 'center',
@@ -229,7 +259,7 @@ const styles = StyleSheet.create({
   },
   gradientMobile: {
     width: '100%',
-    height: 220, // Compact height on mobile
+    height: 220,
     borderBottomLeftRadius: 32,
     borderBottomRightRadius: 32,
   },
@@ -292,8 +322,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   formSectionDesktop: {
-    width: '55%', // Take remaining space
-    marginLeft: 'auto', // Push to right
+    width: '55%',
+    marginLeft: 'auto',
   },
   scrollContent: {
     flexGrow: 1,
@@ -321,6 +351,18 @@ const styles = StyleSheet.create({
   },
   subtitleText: {
     marginBottom: Spacing['2xl'],
+  },
+  errorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: Spacing.md,
+    borderRadius: BorderRadius.md,
+    marginBottom: Spacing.md,
+    gap: Spacing.sm,
+  },
+  errorText: {
+    flex: 1,
+    fontSize: 14,
   },
   inputContainer: {
     marginBottom: Spacing.md,

@@ -1,8 +1,8 @@
 // Premium AI Chat Screen
-// Chatbot with typing effects and premium bubbles
+// Chatbot connected to FastAPI AI backend
 
 import React, { useState, useRef, useEffect } from 'react';
-import { View, StyleSheet, FlatList, KeyboardAvoidingView, Platform, Pressable } from 'react-native';
+import { View, StyleSheet, FlatList, KeyboardAvoidingView, Platform, Pressable, Alert } from 'react-native';
 import { Text, TextInput, useTheme, Avatar } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
@@ -12,6 +12,7 @@ import TypingIndicator from '../../src/components/ui/TypingIndicator';
 import GradientHeader from '../../src/components/ui/GradientHeader';
 import { Colors } from '../../src/config/colors';
 import { Spacing, BorderRadius } from '../../src/config/theme';
+import { useApi, spendxApi } from '../../src/hooks/useApi';
 
 interface Message {
   id: string;
@@ -20,14 +21,15 @@ interface Message {
   timestamp: string;
 }
 
-const initialMessages: Message[] = [
-  {
-    id: '1',
-    text: "Hello! I'm your SpendX AI assistant. I can help you analyze your spending, create budgets, and provide personalized financial advice. What would you like to know?",
-    sender: 'ai',
-    timestamp: '10:30 AM',
-  },
-];
+interface ChatApiResponse {
+  message: {
+    id: string;
+    role: 'user' | 'assistant';
+    content: string;
+    timestamp: string;
+  };
+  conversation_id: string;
+}
 
 const suggestions = [
   "How much did I spend this week?",
@@ -36,23 +38,25 @@ const suggestions = [
   "Tips to save money",
 ];
 
-const aiResponses: Record<string, string> = {
-  default: "I've analyzed your spending patterns. Based on your recent transactions, you're spending an average of $45 per day. Your biggest spending category is Food & Dining at 35% of your total expenses. Would you like some tips to optimize your spending?",
-  budget: "Based on your income of $4,500 and current spending patterns, I recommend:\n\n• Essentials: $2,250 (50%)\n• Wants: $1,350 (30%)\n• Savings: $900 (20%)\n\nThis follows the 50/30/20 rule. Shall I break this down further by category?",
-  subscriptions: "I found 5 active subscriptions:\n\n• Netflix: $15.99/mo\n• Spotify: $9.99/mo\n• Amazon Prime: $14.99/mo\n• gym: $29.99/mo\n• Cloud Storage: $2.99/mo\n\nTotal: $73.95/month. You could save $108/year by switching to annual plans!",
-  tips: "Here are 3 personalized tips based on your spending:\n\n1. 🍔 Cook at home 2 more times per week to save ~$80/month\n2. ☕ Your coffee spending is $95/month - try brewing at home\n3. 🚗 Consider carpooling - you could save $50/month on transport",
-};
-
 export default function ChatScreen() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const isDark = theme.dark;
   const colors = isDark ? Colors.dark : Colors.light;
   const flatListRef = useRef<FlatList>(null);
+  const { post, isLoading: apiLoading } = useApi<ChatApiResponse>();
 
-  const [messages, setMessages] = useState<Message[]>(initialMessages);
+  const [messages, setMessages] = useState<Message[]>([
+    {
+      id: '1',
+      text: "Hello! I'm your SpendX AI assistant. I can help you analyze your spending, create budgets, and provide personalized financial advice. What would you like to know?",
+      sender: 'ai',
+      timestamp: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
+    },
+  ]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [conversationId, setConversationId] = useState<string | null>(null);
   const [lastMessageTyping, setLastMessageTyping] = useState(false);
 
   const getTimestamp = () => {
@@ -60,17 +64,9 @@ export default function ChatScreen() {
     return now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
   };
 
-  const getAIResponse = (userMessage: string): string => {
-    const lower = userMessage.toLowerCase();
-    if (lower.includes('budget')) return aiResponses.budget;
-    if (lower.includes('subscription')) return aiResponses.subscriptions;
-    if (lower.includes('tip') || lower.includes('save')) return aiResponses.tips;
-    return aiResponses.default;
-  };
-
-  const sendMessage = (text?: string) => {
+  const sendMessage = async (text?: string) => {
     const messageText = text || input;
-    if (!messageText.trim()) return;
+    if (!messageText.trim() || isTyping) return;
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -83,24 +79,48 @@ export default function ChatScreen() {
     setInput('');
     setIsTyping(true);
 
-    // Simulate AI thinking
-    setTimeout(() => {
-      const aiMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        text: getAIResponse(messageText),
+    try {
+      // Call AI chat endpoint
+      const { data, error } = await post(spendxApi.ai.chat, {
+        message: messageText,
+        conversation_id: conversationId,
+      });
+
+      if (error) {
+        throw new Error(error);
+      }
+
+      if (data) {
+        setConversationId(data.conversation_id);
+
+        const aiMessage: Message = {
+          id: data.message.id,
+          text: data.message.content,
+          sender: 'ai',
+          timestamp: getTimestamp(),
+        };
+
+        setIsTyping(false);
+        setLastMessageTyping(true);
+        setMessages(prev => [...prev, aiMessage]);
+
+        // Turn off typing effect after message displays
+        setTimeout(() => {
+          setLastMessageTyping(false);
+        }, Math.min(aiMessage.text.length * 20, 3000) + 500);
+      }
+    } catch (error: any) {
+      setIsTyping(false);
+
+      // Show error as AI message
+      const errorMessage: Message = {
+        id: Date.now().toString(),
+        text: `I'm having trouble connecting right now. Please try again. (${error.message || 'Network error'})`,
         sender: 'ai',
         timestamp: getTimestamp(),
       };
-
-      setIsTyping(false);
-      setLastMessageTyping(true);
-      setMessages(prev => [...prev, aiMessage]);
-
-      // Turn off typing effect after message displays
-      setTimeout(() => {
-        setLastMessageTyping(false);
-      }, aiMessage.text.length * 30 + 500);
-    }, 1500);
+      setMessages(prev => [...prev, errorMessage]);
+    }
   };
 
   const handleSuggestion = (suggestion: string) => {
@@ -145,7 +165,7 @@ export default function ChatScreen() {
                 SpendX AI
               </Text>
               <Text variant="labelSmall" style={styles.headerSubtitle}>
-                Always online
+                {isTyping ? 'Thinking...' : 'Always online'}
               </Text>
             </View>
           </View>
@@ -218,22 +238,23 @@ export default function ChatScreen() {
               style={[styles.input, { color: colors.text }]}
               multiline
               maxLength={500}
+              editable={!isTyping}
             />
             <Pressable
               onPress={() => sendMessage()}
-              disabled={!input.trim()}
+              disabled={!input.trim() || isTyping}
               style={({ pressed }) => [
                 styles.sendButton,
                 {
-                  backgroundColor: input.trim() ? colors.primary : colors.disabled,
+                  backgroundColor: input.trim() && !isTyping ? colors.primary : colors.disabled,
                   opacity: pressed ? 0.8 : 1,
                 },
               ]}
             >
               <MaterialCommunityIcons
-                name="send"
+                name={isTyping ? 'loading' : 'send'}
                 size={20}
-                color={input.trim() ? '#FFFFFF' : colors.disabledText}
+                color={input.trim() && !isTyping ? '#FFFFFF' : colors.disabledText}
               />
             </Pressable>
           </View>
@@ -272,7 +293,7 @@ const styles = StyleSheet.create({
   },
   messagesList: {
     paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.xs, // Smaller padding on mobile
+    paddingHorizontal: Spacing.xs,
   },
   typingContainer: {
     flexDirection: 'row',
@@ -290,11 +311,11 @@ const styles = StyleSheet.create({
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    borderRadius: BorderRadius.lg, // Smaller radius
-    paddingLeft: Spacing.md, // Less padding
+    borderRadius: BorderRadius.lg,
+    paddingLeft: Spacing.md,
     paddingRight: Spacing.xs,
     paddingVertical: Spacing.xs,
-    gap: Spacing.xs, // Tighter gap
+    gap: Spacing.xs,
   },
   input: {
     flex: 1,

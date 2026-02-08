@@ -1,22 +1,26 @@
-// Authentication Hook (API-ready)
-// Manages auth state and provides login/logout functions
+// Authentication Hook (API-connected)
+// Manages auth state with real API calls
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'expo-router';
-// import AsyncStorage from '@react-native-async-storage/async-storage';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import axios from 'axios';
+import { API_BASE_URL, Endpoints } from '../config/api';
 
 interface User {
     id: string;
     email: string;
     name: string;
-    avatar?: string;
-    isPremium?: boolean;
+    avatar_url?: string;
+    is_premium?: boolean;
+    created_at?: string;
 }
 
 interface AuthState {
     user: User | null;
     isLoading: boolean;
     isAuthenticated: boolean;
+    accessToken: string | null;
 }
 
 interface LoginCredentials {
@@ -28,8 +32,19 @@ interface SignupData extends LoginCredentials {
     name: string;
 }
 
-// Mock API base URL - replace with FastAPI backend URL
-const API_BASE_URL = 'http://localhost:8000/api/v1';
+// Token storage keys
+const TOKEN_KEY = 'spendx_access_token';
+const REFRESH_TOKEN_KEY = 'spendx_refresh_token';
+const USER_KEY = 'spendx_user';
+
+// Create axios instance with auth interceptor
+const api = axios.create({
+    baseURL: API_BASE_URL,
+    timeout: 30000,
+    headers: {
+        'Content-Type': 'application/json',
+    },
+});
 
 export function useAuth() {
     const router = useRouter();
@@ -37,7 +52,26 @@ export function useAuth() {
         user: null,
         isLoading: true,
         isAuthenticated: false,
+        accessToken: null,
     });
+
+    // Set up axios interceptor for auth header
+    useEffect(() => {
+        const interceptor = api.interceptors.request.use(
+            async (config) => {
+                const token = await AsyncStorage.getItem(TOKEN_KEY);
+                if (token) {
+                    config.headers.Authorization = `Bearer ${token}`;
+                }
+                return config;
+            },
+            (error) => Promise.reject(error)
+        );
+
+        return () => {
+            api.interceptors.request.eject(interceptor);
+        };
+    }, []);
 
     // Check auth state on mount
     useEffect(() => {
@@ -46,20 +80,84 @@ export function useAuth() {
 
     const checkAuthState = async () => {
         try {
-            // In production, check token in AsyncStorage
-            // const token = await AsyncStorage.getItem('auth_token');
-            // if (token) {
-            //   const user = await fetchUser(token);
-            //   setState({ user, isLoading: false, isAuthenticated: true });
-            // } else {
-            //   setState({ user: null, isLoading: false, isAuthenticated: false });
-            // }
+            const token = await AsyncStorage.getItem(TOKEN_KEY);
+            const userStr = await AsyncStorage.getItem(USER_KEY);
 
-            // Mock: simulate checking auth
-            setState((prev) => ({ ...prev, isLoading: false }));
+            if (token && userStr) {
+                const user = JSON.parse(userStr);
+
+                // Verify token is still valid by fetching profile
+                try {
+                    const response = await api.get(Endpoints.user.profile, {
+                        headers: { Authorization: `Bearer ${token}` },
+                    });
+
+                    setState({
+                        user: response.data,
+                        isLoading: false,
+                        isAuthenticated: true,
+                        accessToken: token,
+                    });
+                    return;
+                } catch (error: any) {
+                    // Token might be expired, try refresh
+                    if (error.response?.status === 401) {
+                        const refreshed = await tryRefreshToken();
+                        if (refreshed) return;
+                    }
+                }
+            }
+
+            setState({
+                user: null,
+                isLoading: false,
+                isAuthenticated: false,
+                accessToken: null,
+            });
         } catch (error) {
             console.error('Auth check failed:', error);
-            setState({ user: null, isLoading: false, isAuthenticated: false });
+            setState({
+                user: null,
+                isLoading: false,
+                isAuthenticated: false,
+                accessToken: null,
+            });
+        }
+    };
+
+    const tryRefreshToken = async (): Promise<boolean> => {
+        try {
+            const refreshToken = await AsyncStorage.getItem(REFRESH_TOKEN_KEY);
+            if (!refreshToken) return false;
+
+            const response = await api.post(Endpoints.auth.refresh, {
+                refresh_token: refreshToken,
+            });
+
+            const { access_token, refresh_token: newRefreshToken } = response.data;
+
+            await AsyncStorage.setItem(TOKEN_KEY, access_token);
+            await AsyncStorage.setItem(REFRESH_TOKEN_KEY, newRefreshToken);
+
+            // Fetch user profile with new token
+            const userResponse = await api.get(Endpoints.user.profile, {
+                headers: { Authorization: `Bearer ${access_token}` },
+            });
+
+            await AsyncStorage.setItem(USER_KEY, JSON.stringify(userResponse.data));
+
+            setState({
+                user: userResponse.data,
+                isLoading: false,
+                isAuthenticated: true,
+                accessToken: access_token,
+            });
+
+            return true;
+        } catch (error) {
+            // Refresh failed, clear tokens
+            await AsyncStorage.multiRemove([TOKEN_KEY, REFRESH_TOKEN_KEY, USER_KEY]);
+            return false;
         }
     };
 
@@ -67,35 +165,33 @@ export function useAuth() {
         setState((prev) => ({ ...prev, isLoading: true }));
 
         try {
-            // In production, call FastAPI login endpoint
-            // const response = await fetch(`${API_BASE_URL}/auth/login`, {
-            //   method: 'POST',
-            //   headers: { 'Content-Type': 'application/json' },
-            //   body: JSON.stringify(credentials),
-            // });
-            // const data = await response.json();
-            // await AsyncStorage.setItem('auth_token', data.token);
+            const response = await api.post(Endpoints.auth.login, credentials);
+            const { access_token, refresh_token } = response.data;
 
-            // Mock: simulate login
-            const mockUser: User = {
-                id: '1',
-                email: credentials.email,
-                name: 'Prath',
-                avatar: 'https://i.pravatar.cc/150?u=prath',
-                isPremium: true,
-            };
+            // Store tokens
+            await AsyncStorage.setItem(TOKEN_KEY, access_token);
+            await AsyncStorage.setItem(REFRESH_TOKEN_KEY, refresh_token);
+
+            // Fetch user profile
+            const userResponse = await api.get(Endpoints.user.profile, {
+                headers: { Authorization: `Bearer ${access_token}` },
+            });
+
+            await AsyncStorage.setItem(USER_KEY, JSON.stringify(userResponse.data));
 
             setState({
-                user: mockUser,
+                user: userResponse.data,
                 isLoading: false,
                 isAuthenticated: true,
+                accessToken: access_token,
             });
 
             router.replace('/(app)');
             return { success: true };
-        } catch (error) {
+        } catch (error: any) {
             setState((prev) => ({ ...prev, isLoading: false }));
-            return { success: false, error: 'Login failed' };
+            const message = error.response?.data?.detail || 'Login failed';
+            return { success: false, error: message };
         }
     }, [router]);
 
@@ -103,43 +199,52 @@ export function useAuth() {
         setState((prev) => ({ ...prev, isLoading: true }));
 
         try {
-            // In production, call FastAPI signup endpoint
-            // const response = await fetch(`${API_BASE_URL}/auth/register`, {
-            //   method: 'POST',
-            //   headers: { 'Content-Type': 'application/json' },
-            //   body: JSON.stringify(data),
-            // });
+            const response = await api.post(Endpoints.auth.signup, data);
+            const { access_token, refresh_token } = response.data;
 
-            // Mock: simulate signup
-            const mockUser: User = {
-                id: '1',
-                email: data.email,
-                name: data.name,
-            };
+            // Store tokens
+            await AsyncStorage.setItem(TOKEN_KEY, access_token);
+            await AsyncStorage.setItem(REFRESH_TOKEN_KEY, refresh_token);
+
+            // Fetch user profile
+            const userResponse = await api.get(Endpoints.user.profile, {
+                headers: { Authorization: `Bearer ${access_token}` },
+            });
+
+            await AsyncStorage.setItem(USER_KEY, JSON.stringify(userResponse.data));
 
             setState({
-                user: mockUser,
+                user: userResponse.data,
                 isLoading: false,
                 isAuthenticated: true,
+                accessToken: access_token,
             });
 
             router.replace('/(app)');
             return { success: true };
-        } catch (error) {
+        } catch (error: any) {
             setState((prev) => ({ ...prev, isLoading: false }));
-            return { success: false, error: 'Signup failed' };
+            const message = error.response?.data?.detail || 'Signup failed';
+            return { success: false, error: message };
         }
     }, [router]);
 
     const logout = useCallback(async () => {
         try {
-            // await AsyncStorage.removeItem('auth_token');
+            // Call logout endpoint (optional, JWT is stateless)
+            await api.post(Endpoints.auth.logout).catch(() => { });
+
+            // Clear stored data
+            await AsyncStorage.multiRemove([TOKEN_KEY, REFRESH_TOKEN_KEY, USER_KEY]);
+
             setState({
                 user: null,
                 isLoading: false,
                 isAuthenticated: false,
+                accessToken: null,
             });
-            router.replace('/auth/login');
+
+            router.replace('/auth/signup');
         } catch (error) {
             console.error('Logout failed:', error);
         }
@@ -149,14 +254,20 @@ export function useAuth() {
         if (!state.user) return { success: false };
 
         try {
-            // In production, call FastAPI update endpoint
+            const response = await api.patch(Endpoints.user.updateProfile, updates);
+            const updatedUser = response.data;
+
+            await AsyncStorage.setItem(USER_KEY, JSON.stringify(updatedUser));
+
             setState((prev) => ({
                 ...prev,
-                user: prev.user ? { ...prev.user, ...updates } : null,
+                user: updatedUser,
             }));
+
             return { success: true };
-        } catch (error) {
-            return { success: false, error: 'Update failed' };
+        } catch (error: any) {
+            const message = error.response?.data?.detail || 'Update failed';
+            return { success: false, error: message };
         }
     }, [state.user]);
 
@@ -167,5 +278,9 @@ export function useAuth() {
         logout,
         updateProfile,
         checkAuthState,
+        api, // Export configured axios instance
     };
 }
+
+// Export the configured API instance for use in other hooks
+export { api };

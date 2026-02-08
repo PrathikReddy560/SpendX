@@ -1,50 +1,138 @@
 // Premium Dashboard Screen
-// Hero stats, quick actions, and recent transactions
+// Connected to backend APIs for real data
 
-import React, { useState } from 'react';
-import { View, ScrollView, StyleSheet, Pressable } from 'react-native';
-import { Text, Avatar, useTheme, FAB, Portal, Modal } from 'react-native-paper';
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, ScrollView, StyleSheet, Pressable, RefreshControl, ActivityIndicator } from 'react-native';
+import { Text, Avatar, useTheme, FAB } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import Animated, { FadeInDown, FadeInUp, FadeIn } from 'react-native-reanimated';
+import { useRouter, useFocusEffect } from 'expo-router';
+import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import axios from 'axios';
 import ResponsiveContainer, { useResponsive } from '../../src/components/layout/ResponsiveContainer';
 import GradientHeader from '../../src/components/ui/GradientHeader';
 import StatCard from '../../src/components/ui/StatCard';
 import TransactionItem from '../../src/components/ui/TransactionItem';
 import GlassCard from '../../src/components/ui/GlassCard';
-import AnimatedButton from '../../src/components/ui/AnimatedButton';
 import { Colors } from '../../src/config/colors';
 import { Spacing, BorderRadius } from '../../src/config/theme';
+import { API_BASE_URL, Endpoints } from '../../src/config/api';
 
-// Mock data
-const mockTransactions = [
-  { id: '1', title: 'Starbucks Coffee', category: 'food', amount: 5.50, date: 'Today', type: 'expense' as const },
-  { id: '2', title: 'Netflix Subscription', category: 'entertainment', amount: 15.99, date: 'Yesterday', type: 'expense' as const },
-  { id: '3', title: 'Salary Deposit', category: 'income', amount: 4500, date: 'Jan 25', type: 'income' as const },
-  { id: '4', title: 'Grocery Store', category: 'food', amount: 85.20, date: 'Jan 24', type: 'expense' as const },
-  { id: '5', title: 'Uber Ride', category: 'transport', amount: 24.50, date: 'Jan 23', type: 'expense' as const },
-];
+// Category icon mapping
+const categoryIcons: Record<string, string> = {
+  'Food & Dining': 'food',
+  'Transport': 'car',
+  'Shopping': 'shopping',
+  'Entertainment': 'movie',
+  'Bills & Utilities': 'file-document',
+  'Health': 'hospital',
+  'Education': 'school',
+  'Income': 'cash-plus',
+  'Other': 'dots-horizontal',
+};
 
 const quickActions = [
   { id: 'add', icon: 'plus', label: 'Add', color: '#6366F1' },
-  { id: 'transfer', icon: 'swap-horizontal', label: 'Transfer', color: '#10B981' },
   { id: 'budget', icon: 'chart-pie', label: 'Budget', color: '#F59E0B' },
   { id: 'scan', icon: 'qrcode-scan', label: 'Scan', color: '#EC4899' },
 ];
 
+interface Transaction {
+  id: string;
+  title: string;
+  category: string;
+  amount: number;
+  date: string;
+  type: 'income' | 'expense';
+}
+
+interface Summary {
+  totalIncome: number;
+  totalExpense: number;
+  balance: number;
+}
+
 export default function Dashboard() {
   const theme = useTheme();
   const router = useRouter();
-  const { isDesktop, isMobile } = useResponsive();
+  const { isDesktop } = useResponsive();
   const isDark = theme.dark;
   const colors = isDark ? Colors.dark : Colors.light;
 
-  const [fabOpen, setFabOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [summary, setSummary] = useState<Summary>({
+    totalIncome: 0,
+    totalExpense: 0,
+    balance: 0,
+  });
+  const [userName, setUserName] = useState('User');
+
+  const fetchData = useCallback(async () => {
+    try {
+      const token = await AsyncStorage.getItem('spendx_access_token');
+      if (!token) {
+        router.replace('/auth/login');
+        return;
+      }
+
+      const headers = { Authorization: `Bearer ${token}` };
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = now.getMonth() + 1;
+
+      // Fetch transactions and summary in parallel
+      const [transactionsRes, summaryRes, userRes] = await Promise.all([
+        axios.get(`${API_BASE_URL}${Endpoints.transactions.list}?per_page=10`, { headers }),
+        axios.get(`${API_BASE_URL}${Endpoints.transactions.summary}?year=${year}&month=${month}`, { headers }),
+        axios.get(`${API_BASE_URL}${Endpoints.user.profile}`, { headers }),
+      ]);
+
+      // Map transactions to UI format
+      const mappedTransactions: Transaction[] = transactionsRes.data.items.map((item: any) => ({
+        id: item.id,
+        title: item.description || item.category.name,
+        category: categoryIcons[item.category.name] || 'dots-horizontal',
+        amount: parseFloat(item.amount),
+        date: formatDate(item.date),
+        type: item.type.toLowerCase() as 'income' | 'expense',
+      }));
+
+      setTransactions(mappedTransactions);
+      setSummary({
+        totalIncome: parseFloat(summaryRes.data.total_income) || 0,
+        totalExpense: parseFloat(summaryRes.data.total_expense) || 0,
+        balance: parseFloat(summaryRes.data.balance) || 0,
+      });
+      setUserName(userRes.data.name || 'User');
+    } catch (error: any) {
+      console.error('Dashboard fetch error:', error.response?.data || error.message);
+      if (error.response?.status === 401) {
+        router.replace('/auth/login');
+      }
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [router]);
+
+  // Refresh when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      fetchData();
+    }, [fetchData])
+  );
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    fetchData();
+  }, [fetchData]);
 
   const handleQuickAction = (actionId: string) => {
     switch (actionId) {
       case 'add':
-        // Navigate to add expense
+        router.push('/(app)/add');
         break;
       case 'budget':
         router.push('/(app)/analysis');
@@ -54,11 +142,41 @@ export default function Dashboard() {
     }
   };
 
+  const formatDate = (dateStr: string): string => {
+    const date = new Date(dateStr);
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    if (date.toDateString() === today.toDateString()) return 'Today';
+    if (date.toDateString() === yesterday.toDateString()) return 'Yesterday';
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  };
+
+  const getGreeting = (): string => {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Good morning';
+    if (hour < 17) return 'Good afternoon';
+    return 'Good evening';
+  };
+
+  if (loading) {
+    return (
+      <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={{ color: colors.text, marginTop: Spacing.md }}>Loading...</Text>
+      </View>
+    );
+  }
+
   return (
     <ResponsiveContainer>
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
       >
         {/* Gradient Header with Balance */}
         <GradientHeader height="lg" rounded>
@@ -66,16 +184,16 @@ export default function Dashboard() {
             <View style={styles.headerTop}>
               <View>
                 <Text variant="bodyLarge" style={styles.greeting}>
-                  Good morning 👋
+                  {getGreeting()} 👋
                 </Text>
                 <Text variant="headlineSmall" style={styles.userName}>
-                  Prath
+                  {userName}
                 </Text>
               </View>
               <Pressable onPress={() => router.push('/(app)/profile')}>
-                <Avatar.Image
+                <Avatar.Icon
                   size={48}
-                  source={{ uri: 'https://i.pravatar.cc/150?u=prath' }}
+                  icon="account"
                   style={styles.avatar}
                 />
               </Pressable>
@@ -87,11 +205,16 @@ export default function Dashboard() {
                 <View style={styles.balanceRow}>
                   <View>
                     <Text style={styles.balanceLabel}>Total Balance</Text>
-                    <Text style={styles.balanceAmount}>$12,450.00</Text>
+                    <Text style={styles.balanceAmount}>
+                      ${(summary.balance).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                    </Text>
                   </View>
                   <View style={styles.balanceChange}>
-                    <MaterialCommunityIcons name="trending-up" size={20} color={colors.success} />
-                    <Text style={[styles.changeText, { color: colors.success }]}>+12.5%</Text>
+                    <MaterialCommunityIcons
+                      name={summary.balance >= 0 ? 'trending-up' : 'trending-down'}
+                      size={20}
+                      color={summary.balance >= 0 ? colors.success : colors.error}
+                    />
                   </View>
                 </View>
               </GlassCard>
@@ -105,29 +228,26 @@ export default function Dashboard() {
           <View style={[styles.statsRow, isDesktop && styles.statsRowDesktop]}>
             <StatCard
               title="Income"
-              value={4500}
+              value={summary.totalIncome}
               formatAsCurrency
               icon="arrow-down-circle"
-              trend={{ direction: 'up', value: '+8%' }}
               iconColor={colors.success}
               delay={100}
             />
             <StatCard
               title="Expenses"
-              value={1240}
+              value={summary.totalExpense}
               formatAsCurrency
               icon="arrow-up-circle"
-              trend={{ direction: 'down', value: '-3%' }}
               iconColor={colors.error}
               delay={150}
             />
             {isDesktop && (
               <StatCard
                 title="Savings"
-                value={3260}
+                value={summary.balance}
                 formatAsCurrency
                 icon="piggy-bank"
-                trend={{ direction: 'up', value: '+15%' }}
                 variant="gradient"
                 delay={200}
               />
@@ -140,7 +260,7 @@ export default function Dashboard() {
               Quick Actions
             </Text>
             <View style={styles.quickActionsRow}>
-              {quickActions.map((action, index) => (
+              {quickActions.map((action) => (
                 <Pressable
                   key={action.id}
                   onPress={() => handleQuickAction(action.id)}
@@ -149,22 +269,14 @@ export default function Dashboard() {
                     { opacity: pressed ? 0.8 : 1 },
                   ]}
                 >
-                  <View
-                    style={[
-                      styles.quickActionIcon,
-                      { backgroundColor: `${action.color}15` },
-                    ]}
-                  >
+                  <View style={[styles.quickActionIcon, { backgroundColor: action.color + '20' }]}>
                     <MaterialCommunityIcons
                       name={action.icon as any}
                       size={24}
                       color={action.color}
                     />
                   </View>
-                  <Text
-                    variant="labelSmall"
-                    style={[styles.quickActionLabel, { color: colors.textSecondary }]}
-                  >
+                  <Text variant="labelSmall" style={[styles.quickActionLabel, { color: colors.text }]}>
                     {action.label}
                   </Text>
                 </Pressable>
@@ -179,84 +291,73 @@ export default function Dashboard() {
                 Recent Transactions
               </Text>
               <Pressable onPress={() => router.push('/(app)/history')}>
-                <Text style={[styles.seeAllLink, { color: colors.primary }]}>
+                <Text variant="labelMedium" style={{ color: colors.primary }}>
                   See All
                 </Text>
               </Pressable>
             </View>
 
-            <View style={styles.transactionsList}>
-              {mockTransactions.map((transaction, index) => (
+            {transactions.length === 0 ? (
+              <View style={styles.emptyState}>
+                <MaterialCommunityIcons name="wallet-outline" size={48} color={colors.textSecondary} />
+                <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+                  No transactions yet
+                </Text>
+                <Text style={[styles.emptySubtext, { color: colors.textSecondary }]}>
+                  Tap the + button to add your first transaction
+                </Text>
+              </View>
+            ) : (
+              transactions.slice(0, 5).map((transaction, index) => (
                 <TransactionItem
                   key={transaction.id}
                   {...transaction}
                   delay={index * 50}
                 />
-              ))}
-            </View>
-          </Animated.View>
-
-          {/* AI Insight Card */}
-          <Animated.View entering={FadeInDown.delay(400).duration(400)}>
-            <GlassCard
-              style={[styles.insightCard, { backgroundColor: `${colors.primary}10` }]}
-              variant="outlined"
-              onPress={() => router.push('/(app)/analysis')}
-            >
-              <View style={styles.insightContent}>
-                <View style={styles.insightIcon}>
-                  <MaterialCommunityIcons name="lightbulb-on" size={28} color={colors.accent} />
-                </View>
-                <View style={styles.insightText}>
-                  <Text variant="titleSmall" style={[styles.insightTitle, { color: colors.text }]}>
-                    AI Insight
-                  </Text>
-                  <Text variant="bodySmall" style={{ color: colors.textSecondary }}>
-                    You're spending 20% less on food this week. Keep it up! 🎉
-                  </Text>
-                </View>
-                <MaterialCommunityIcons name="chevron-right" size={24} color={colors.textTertiary} />
-              </View>
-            </GlassCard>
+              ))
+            )}
           </Animated.View>
         </View>
       </ScrollView>
 
-      {/* Floating Action Button */}
+      {/* FAB for adding transaction */}
       <FAB
         icon="plus"
         style={[styles.fab, { backgroundColor: colors.primary }]}
+        onPress={() => router.push('/(app)/add')}
         color="#FFFFFF"
-        onPress={() => console.log('Add expense')}
       />
     </ResponsiveContainer>
   );
 }
 
 const styles = StyleSheet.create({
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   scrollContent: {
-    paddingBottom: 100,
     flexGrow: 1,
   },
   headerContent: {
-    gap: Spacing.md,
-    paddingHorizontal: Spacing.md, // Add padding inside header
+    padding: Spacing.lg,
   },
   headerTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: Spacing.lg,
   },
   greeting: {
-    color: 'rgba(255, 255, 255, 0.8)',
+    color: 'rgba(255,255,255,0.8)',
   },
   userName: {
     color: '#FFFFFF',
     fontWeight: 'bold',
   },
   avatar: {
-    borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
+    backgroundColor: 'rgba(255,255,255,0.2)',
   },
   balanceCard: {
     marginTop: Spacing.sm,
@@ -267,9 +368,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   balanceLabel: {
-    color: 'rgba(255, 255, 255, 0.7)',
+    color: 'rgba(255,255,255,0.8)',
     fontSize: 14,
-    marginBottom: Spacing.xs,
   },
   balanceAmount: {
     color: '#FFFFFF',
@@ -279,36 +379,24 @@ const styles = StyleSheet.create({
   balanceChange: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.xs,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.full,
-  },
-  changeText: {
-    fontWeight: '600',
-    fontSize: 14,
+    gap: 4,
   },
   content: {
-    paddingHorizontal: Spacing.md, // Consistent horizontal padding
-    paddingTop: Spacing.lg,
-    marginTop: -Spacing.lg, // Less negative margin
+    padding: Spacing.lg,
   },
   contentDesktop: {
-    maxWidth: 1000,
-    alignSelf: 'center',
-    width: '100%',
+    paddingHorizontal: Spacing.xl * 2,
   },
   statsRow: {
     flexDirection: 'row',
-    gap: Spacing.sm, // Smaller gap on mobile
-    marginBottom: Spacing.lg,
+    gap: Spacing.md,
+    marginBottom: Spacing.xl,
   },
   statsRowDesktop: {
-    gap: Spacing.md,
+    gap: Spacing.lg,
   },
   sectionTitle: {
-    fontWeight: 'bold',
+    fontWeight: '600',
     marginBottom: Spacing.md,
   },
   sectionHeader: {
@@ -317,62 +405,42 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: Spacing.md,
   },
-  seeAllLink: {
-    fontWeight: '600',
-    fontSize: 14,
-  },
   quickActionsRow: {
     flexDirection: 'row',
-    justifyContent: 'space-around', // Better spacing
-    marginBottom: Spacing.lg,
-    flexWrap: 'wrap', // Allow wrapping on very small screens
+    justifyContent: 'space-around',
+    marginBottom: Spacing.xl,
   },
   quickActionButton: {
     alignItems: 'center',
-    gap: Spacing.xs, // Smaller gap
-    minWidth: 60, // Ensure minimum width
+    gap: Spacing.xs,
   },
   quickActionIcon: {
-    width: 48, // Smaller icons on mobile
-    height: 48,
-    borderRadius: BorderRadius.md,
-    alignItems: 'center',
+    width: 56,
+    height: 56,
+    borderRadius: BorderRadius.lg,
     justifyContent: 'center',
+    alignItems: 'center',
   },
   quickActionLabel: {
-    fontWeight: '500',
+    marginTop: Spacing.xs,
   },
-  transactionsList: {
-    gap: Spacing.xs,
-    marginBottom: Spacing.xl,
-  },
-  insightCard: {
-    marginBottom: Spacing.lg,
-  },
-  insightContent: {
-    flexDirection: 'row',
+  emptyState: {
     alignItems: 'center',
-    gap: Spacing.md,
+    paddingVertical: Spacing.xl * 2,
   },
-  insightIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: BorderRadius.md,
-    backgroundColor: 'rgba(245, 158, 11, 0.15)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  insightText: {
-    flex: 1,
-  },
-  insightTitle: {
+  emptyText: {
+    fontSize: 16,
     fontWeight: '600',
-    marginBottom: 2,
+    marginTop: Spacing.md,
+  },
+  emptySubtext: {
+    fontSize: 14,
+    marginTop: Spacing.xs,
+    textAlign: 'center',
   },
   fab: {
     position: 'absolute',
-    margin: Spacing.lg,
-    right: 0,
-    bottom: 0,
+    right: Spacing.lg,
+    bottom: Spacing.lg,
   },
 });

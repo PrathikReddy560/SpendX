@@ -1,5 +1,5 @@
 // Premium Signup Screen
-// Multi-step signup with password strength and premium styling
+// Multi-step signup with password strength and real API auth
 
 import React, { useState } from 'react';
 import { View, StyleSheet, Platform, Pressable, KeyboardAvoidingView, ScrollView } from 'react-native';
@@ -7,11 +7,12 @@ import { Text, TextInput, useTheme, Checkbox } from 'react-native-paper';
 import { useRouter, Link } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
+import Animated, { FadeInDown, FadeInUp, FadeIn } from 'react-native-reanimated';
 import { useResponsive } from '../../src/components/layout/ResponsiveContainer';
 import AnimatedButton from '../../src/components/ui/AnimatedButton';
 import { Colors } from '../../src/config/colors';
 import { Spacing, BorderRadius } from '../../src/config/theme';
+import { useAuth } from '../../src/hooks/useAuth';
 
 export default function SignupScreen() {
     const router = useRouter();
@@ -19,6 +20,7 @@ export default function SignupScreen() {
     const { isDesktop } = useResponsive();
     const isDark = theme.dark;
     const colors = isDark ? Colors.dark : Colors.light;
+    const { signup, isLoading } = useAuth();
 
     const [name, setName] = useState('');
     const [email, setEmail] = useState('');
@@ -26,7 +28,7 @@ export default function SignupScreen() {
     const [confirmPassword, setConfirmPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
     const [acceptTerms, setAcceptTerms] = useState(false);
-    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
 
     // Password strength calculation
     const getPasswordStrength = () => {
@@ -49,16 +51,21 @@ export default function SignupScreen() {
 
     const passwordStrength = getPasswordStrength();
     const passwordsMatch = password === confirmPassword || !confirmPassword;
-    const isFormValid = name && email && password && confirmPassword && passwordsMatch && acceptTerms;
+    const isFormValid = name && email && password && confirmPassword && passwordsMatch && acceptTerms && password.length >= 8;
 
     const handleSignup = async () => {
         if (!isFormValid) return;
-        setLoading(true);
-        // Simulate API call
-        setTimeout(() => {
-            setLoading(false);
-            router.replace('/(app)');
-        }, 1500);
+        setError(null);
+
+        const result = await signup({
+            email: email.trim(),
+            password,
+            name: name.trim()
+        });
+
+        if (!result.success) {
+            setError(result.error || 'Registration failed. Please try again.');
+        }
     };
 
     return (
@@ -118,6 +125,16 @@ export default function SignupScreen() {
                         <Text variant="bodyMedium" style={[styles.subtitleText, { color: colors.textSecondary }]}>
                             Fill in your details to get started
                         </Text>
+
+                        {/* Error Message */}
+                        {error && (
+                            <Animated.View entering={FadeIn.duration(300)}>
+                                <View style={[styles.errorContainer, { backgroundColor: `${colors.error}15` }]}>
+                                    <MaterialCommunityIcons name="alert-circle" size={20} color={colors.error} />
+                                    <Text style={[styles.apiErrorText, { color: colors.error }]}>{error}</Text>
+                                </View>
+                            </Animated.View>
+                        )}
 
                         {/* Name Input */}
                         <View style={styles.inputContainer}>
@@ -232,7 +249,7 @@ export default function SignupScreen() {
                         <AnimatedButton
                             title="Create Account"
                             onPress={handleSignup}
-                            loading={loading}
+                            loading={isLoading}
                             disabled={!isFormValid}
                             fullWidth
                             size="lg"
@@ -417,6 +434,18 @@ const styles = StyleSheet.create({
     },
     loginLink: {
         fontWeight: '600',
+        fontSize: 14,
+    },
+    errorContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: Spacing.md,
+        borderRadius: BorderRadius.md,
+        marginBottom: Spacing.md,
+        gap: Spacing.sm,
+    },
+    apiErrorText: {
+        flex: 1,
         fontSize: 14,
     },
 });
