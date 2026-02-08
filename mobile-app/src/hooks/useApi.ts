@@ -1,11 +1,13 @@
 // API Integration Hook (FastAPI Ready)
-// Centralized API calls with error handling and loading states
+// Centralized API calls with error handling, loading states, and auth
 
 import { useState, useCallback } from 'react';
-// import AsyncStorage from '@react-native-async-storage/async-storage';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import axios, { AxiosInstance, AxiosError } from 'axios';
+import { API_BASE_URL, API_TIMEOUT } from '../config/api';
 
-// Replace with your FastAPI backend URL
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+// Token key
+const TOKEN_KEY = 'spendx_access_token';
 
 interface ApiResponse<T> {
     data: T | null;
@@ -16,8 +18,56 @@ interface ApiResponse<T> {
 interface RequestOptions {
     method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
     body?: Record<string, unknown>;
+    params?: Record<string, string | number | boolean>;
     headers?: Record<string, string>;
 }
+
+// Create and configure axios instance
+const createApiClient = (): AxiosInstance => {
+    const client = axios.create({
+        baseURL: API_BASE_URL,
+        timeout: API_TIMEOUT,
+        headers: {
+            'Content-Type': 'application/json',
+        },
+    });
+
+    // Request interceptor to add auth token
+    client.interceptors.request.use(
+        async (config) => {
+            const token = await AsyncStorage.getItem(TOKEN_KEY);
+            if (token) {
+                config.headers.Authorization = `Bearer ${token}`;
+            }
+            return config;
+        },
+        (error) => Promise.reject(error)
+    );
+
+    // Response interceptor for error handling
+    client.interceptors.response.use(
+        (response) => response,
+        async (error: AxiosError) => {
+            if (error.response?.status === 401) {
+                // Token expired - could trigger refresh here
+                // For now, just reject
+            }
+            return Promise.reject(error);
+        }
+    );
+
+    return client;
+};
+
+// Singleton API client
+let apiClient: AxiosInstance | null = null;
+
+const getApiClient = (): AxiosInstance => {
+    if (!apiClient) {
+        apiClient = createApiClient();
+    }
+    return apiClient;
+};
 
 export function useApi<T = unknown>() {
     const [state, setState] = useState<ApiResponse<T>>({
@@ -27,58 +77,56 @@ export function useApi<T = unknown>() {
     });
 
     const request = useCallback(async (endpoint: string, options: RequestOptions = {}) => {
-        const { method = 'GET', body, headers = {} } = options;
+        const { method = 'GET', body, params, headers = {} } = options;
+        const client = getApiClient();
 
         setState((prev) => ({ ...prev, isLoading: true, error: null }));
 
         try {
-            // Get auth token
-            // const token = await AsyncStorage.getItem('auth_token');
-            const token = null; // Mock
-
-            const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+            const response = await client.request<T>({
+                url: endpoint,
                 method,
-                headers: {
-                    'Content-Type': 'application/json',
-                    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-                    ...headers,
-                },
-                ...(body ? { body: JSON.stringify(body) } : {}),
+                data: body,
+                params,
+                headers,
             });
 
-            if (!response.ok) {
-                const errorData = await response.json().catch(() => ({}));
-                throw new Error(errorData.detail || `Request failed: ${response.status}`);
+            setState({ data: response.data, error: null, isLoading: false });
+            return { data: response.data, error: null };
+        } catch (error) {
+            let errorMessage = 'An error occurred';
+
+            if (axios.isAxiosError(error)) {
+                errorMessage = error.response?.data?.detail
+                    || error.response?.data?.message
+                    || error.message;
+            } else if (error instanceof Error) {
+                errorMessage = error.message;
             }
 
-            const data = await response.json();
-            setState({ data, error: null, isLoading: false });
-            return { data, error: null };
-        } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : 'An error occurred';
             setState({ data: null, error: errorMessage, isLoading: false });
             return { data: null, error: errorMessage };
         }
     }, []);
 
-    const get = useCallback((endpoint: string, headers?: Record<string, string>) => {
-        return request(endpoint, { method: 'GET', headers });
+    const get = useCallback((endpoint: string, params?: Record<string, string | number | boolean>) => {
+        return request(endpoint, { method: 'GET', params });
     }, [request]);
 
-    const post = useCallback((endpoint: string, body: Record<string, unknown>, headers?: Record<string, string>) => {
-        return request(endpoint, { method: 'POST', body, headers });
+    const post = useCallback((endpoint: string, body: Record<string, unknown>) => {
+        return request(endpoint, { method: 'POST', body });
     }, [request]);
 
-    const put = useCallback((endpoint: string, body: Record<string, unknown>, headers?: Record<string, string>) => {
-        return request(endpoint, { method: 'PUT', body, headers });
+    const put = useCallback((endpoint: string, body: Record<string, unknown>) => {
+        return request(endpoint, { method: 'PUT', body });
     }, [request]);
 
-    const patch = useCallback((endpoint: string, body: Record<string, unknown>, headers?: Record<string, string>) => {
-        return request(endpoint, { method: 'PATCH', body, headers });
+    const patch = useCallback((endpoint: string, body: Record<string, unknown>) => {
+        return request(endpoint, { method: 'PATCH', body });
     }, [request]);
 
-    const del = useCallback((endpoint: string, headers?: Record<string, string>) => {
-        return request(endpoint, { method: 'DELETE', headers });
+    const del = useCallback((endpoint: string) => {
+        return request(endpoint, { method: 'DELETE' });
     }, [request]);
 
     return {
@@ -94,41 +142,46 @@ export function useApi<T = unknown>() {
 
 // Pre-configured API endpoints for SpendX
 export const spendxApi = {
+    // Authentication
+    auth: {
+        login: '/api/auth/login',
+        signup: '/api/auth/signup',
+        refresh: '/api/auth/refresh',
+        logout: '/api/auth/logout',
+    },
+
+    // Users
+    users: {
+        profile: '/api/users/me',
+        updateProfile: '/api/users/me',
+    },
+
     // Transactions
     transactions: {
-        list: '/transactions',
-        create: '/transactions',
-        get: (id: string) => `/transactions/${id}`,
-        update: (id: string) => `/transactions/${id}`,
-        delete: (id: string) => `/transactions/${id}`,
-        byMonth: (year: number, month: number) => `/transactions?year=${year}&month=${month}`,
+        list: '/api/transactions',
+        create: '/api/transactions',
+        get: (id: string) => `/api/transactions/${id}`,
+        update: (id: string) => `/api/transactions/${id}`,
+        delete: (id: string) => `/api/transactions/${id}`,
+        summary: '/api/transactions/summary',
+        categories: '/api/transactions/categories',
     },
 
-    // Analysis
-    analysis: {
-        summary: '/analysis/summary',
-        predictions: '/analysis/predictions',
-        categoryBreakdown: '/analysis/categories',
-        trends: '/analysis/trends',
+    // Budgets
+    budgets: {
+        current: '/api/budgets/current',
+        create: '/api/budgets',
+        history: '/api/budgets/history',
     },
 
-    // Chat
-    chat: {
-        send: '/chat/message',
-        history: '/chat/history',
-    },
-
-    // User
-    user: {
-        profile: '/users/me',
-        updateProfile: '/users/me',
-        preferences: '/users/preferences',
-    },
-
-    // Budget
-    budget: {
-        list: '/budgets',
-        create: '/budgets',
-        update: (id: string) => `/budgets/${id}`,
+    // AI
+    ai: {
+        chat: '/api/ai/chat',
+        chatHistory: (id: string) => `/api/ai/chat/${id}`,
+        predict: '/api/ai/predict',
+        insights: '/api/ai/insights',
     },
 };
+
+// Export API client for direct use
+export { getApiClient };

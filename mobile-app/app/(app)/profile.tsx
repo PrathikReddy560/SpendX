@@ -1,13 +1,15 @@
 // Premium Profile Screen
 // User settings with premium styling
 
-import React, { useContext } from 'react';
-import { View, ScrollView, StyleSheet, Pressable, Alert } from 'react-native';
+import React, { useContext, useState, useCallback } from 'react';
+import { View, ScrollView, StyleSheet, Pressable, Alert, ActivityIndicator, Platform } from 'react-native';
 import { Text, Avatar, Switch, useTheme, Divider } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import Animated, { FadeInDown } from 'react-native-reanimated';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import axios from 'axios';
 import ResponsiveContainer, { useResponsive } from '../../src/components/layout/ResponsiveContainer';
 import GlassCard from '../../src/components/ui/GlassCard';
 import AnimatedButton from '../../src/components/ui/AnimatedButton';
@@ -15,6 +17,7 @@ import Footer from '../../src/components/layout/Footer';
 import { ThemeContext } from '../_layout';
 import { Colors } from '../../src/config/colors';
 import { Spacing, BorderRadius } from '../../src/config/theme';
+import { API_BASE_URL, Endpoints } from '../../src/config/api';
 
 interface SettingItemProps {
   icon: string;
@@ -58,11 +61,16 @@ function SettingItem({ icon, title, subtitle, onPress, rightElement, danger }: S
           </Text>
         )}
       </View>
-      {rightElement || (
-        onPress && <MaterialCommunityIcons name="chevron-right" size={24} color={colors.textTertiary} />
-      )}
+      {rightElement}
     </Pressable>
   );
+}
+
+interface UserData {
+  name: string;
+  email: string;
+  avatar_url: string | null;
+  is_premium: boolean;
 }
 
 export default function ProfileScreen() {
@@ -74,6 +82,50 @@ export default function ProfileScreen() {
 
   const { toggleTheme, isDark: themeIsDark } = useContext(ThemeContext);
 
+  const [loading, setLoading] = useState(true);
+  const [userData, setUserData] = useState<UserData>({
+    name: 'User',
+    email: '',
+    avatar_url: null,
+    is_premium: false,
+  });
+
+  const fetchUserData = useCallback(async () => {
+    try {
+      const token = await AsyncStorage.getItem('spendx_access_token');
+      if (!token) {
+        router.replace('/auth/login');
+        return;
+      }
+
+      const response = await axios.get(
+        `${API_BASE_URL}${Endpoints.user.profile}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      setUserData({
+        name: response.data.name || 'User',
+        email: response.data.email || '',
+        avatar_url: response.data.avatar_url,
+        is_premium: response.data.is_premium || false,
+      });
+    } catch (error: any) {
+      console.error('Fetch user data error:', error);
+      if (error.response?.status === 401) {
+        await AsyncStorage.removeItem('spendx_access_token');
+        router.replace('/auth/login');
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [router]);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchUserData();
+    }, [fetchUserData])
+  );
+
   const handleAvatarPress = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
@@ -84,23 +136,66 @@ export default function ProfileScreen() {
 
     if (!result.canceled) {
       console.log('Selected image:', result.assets[0].uri);
+      // TODO: Upload to backend
     }
   };
 
-  const handleLogout = () => {
-    Alert.alert(
-      'Logout',
-      'Are you sure you want to logout?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Logout',
-          style: 'destructive',
-          onPress: () => router.replace('/auth/login'),
-        },
-      ]
-    );
+  const handleLogout = async () => {
+    console.log('Logout button pressed');
+
+    // Helper function to perform the actual logout
+    const performLogout = async () => {
+      console.log('Logout confirmed, clearing tokens...');
+      try {
+        // Clear all auth-related data
+        await AsyncStorage.multiRemove([
+          'spendx_access_token',
+          'spendx_refresh_token',
+          'spendx_user'
+        ]);
+        console.log('Tokens cleared, navigating to signup...');
+        // Navigate to signup page
+        router.replace('/auth/signup');
+        console.log('Navigation called');
+      } catch (error) {
+        console.error('Logout error:', error);
+        if (Platform.OS === 'web') {
+          window.alert('Failed to logout. Please try again.');
+        } else {
+          Alert.alert('Error', 'Failed to logout. Please try again.');
+        }
+      }
+    };
+
+    // Use web-compatible confirm dialog on web, native Alert on mobile
+    if (Platform.OS === 'web') {
+      const confirmed = window.confirm('Are you sure you want to logout?');
+      if (confirmed) {
+        await performLogout();
+      }
+    } else {
+      Alert.alert(
+        'Logout',
+        'Are you sure you want to logout?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Logout',
+            style: 'destructive',
+            onPress: performLogout,
+          },
+        ]
+      );
+    }
   };
+
+  if (loading) {
+    return (
+      <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
 
   return (
     <ResponsiveContainer>
@@ -116,7 +211,7 @@ export default function ProfileScreen() {
           <Pressable onPress={handleAvatarPress} style={styles.avatarContainer}>
             <Avatar.Image
               size={100}
-              source={{ uri: 'https://i.pravatar.cc/300?u=prath' }}
+              source={{ uri: userData.avatar_url || `https://i.pravatar.cc/300?u=${userData.email}` }}
               style={styles.avatar}
             />
             <View style={[styles.editBadge, { backgroundColor: colors.primary }]}>
@@ -124,16 +219,18 @@ export default function ProfileScreen() {
             </View>
           </Pressable>
           <Text variant="headlineSmall" style={[styles.userName, { color: colors.text }]}>
-            Prath
+            {userData.name}
           </Text>
-          <View style={styles.membershipBadge}>
-            <MaterialCommunityIcons name="crown" size={16} color={colors.accent} />
-            <Text style={[styles.membershipText, { color: colors.accent }]}>
-              Premium Member
-            </Text>
-          </View>
+          {userData.is_premium && (
+            <View style={styles.membershipBadge}>
+              <MaterialCommunityIcons name="crown" size={16} color={colors.accent} />
+              <Text style={[styles.membershipText, { color: colors.accent }]}>
+                Premium Member
+              </Text>
+            </View>
+          )}
           <Text variant="bodyMedium" style={{ color: colors.textSecondary }}>
-            prath@example.com
+            {userData.email}
           </Text>
         </Animated.View>
 
@@ -149,21 +246,21 @@ export default function ProfileScreen() {
                 icon="account-edit"
                 title="Edit Profile"
                 subtitle="Update your personal information"
-                onPress={() => { }}
+                onPress={() => router.push('/(app)/edit-profile')}
               />
               <Divider style={{ backgroundColor: colors.border }} />
               <SettingItem
                 icon="lock"
                 title="Security"
                 subtitle="Password, 2FA, biometrics"
-                onPress={() => { }}
+                onPress={() => router.push('/(app)/change-password')}
               />
               <Divider style={{ backgroundColor: colors.border }} />
               <SettingItem
                 icon="bell"
                 title="Notifications"
                 subtitle="Push, email, reminders"
-                onPress={() => { }}
+                onPress={() => router.push('/(app)/notifications')}
               />
             </GlassCard>
           </Animated.View>
@@ -188,61 +285,27 @@ export default function ProfileScreen() {
               />
               <Divider style={{ backgroundColor: colors.border }} />
               <SettingItem
-                icon="currency-usd"
+                icon="currency-inr"
                 title="Currency"
-                subtitle="USD ($)"
-                onPress={() => { }}
+                subtitle="INR (₹)"
+                onPress={() => router.push('/(app)/currency')}
               />
               <Divider style={{ backgroundColor: colors.border }} />
               <SettingItem
                 icon="translate"
                 title="Language"
                 subtitle="English"
-                onPress={() => { }}
-              />
-            </GlassCard>
-          </Animated.View>
-
-          {/* Data & Privacy */}
-          <Animated.View entering={FadeInDown.delay(400).duration(400)}>
-            <Text variant="labelLarge" style={[styles.sectionLabel, { color: colors.textSecondary }]}>
-              Data & Privacy
-            </Text>
-            <GlassCard padding="none" style={styles.settingsCard}>
-              <SettingItem
-                icon="download"
-                title="Export Data"
-                subtitle="Download all your data"
-                onPress={() => { }}
-              />
-              <Divider style={{ backgroundColor: colors.border }} />
-              <SettingItem
-                icon="upload"
-                title="Import Data"
-                subtitle="Import from other apps"
-                onPress={() => { }}
-              />
-              <Divider style={{ backgroundColor: colors.border }} />
-              <SettingItem
-                icon="shield-check"
-                title="Privacy Policy"
-                onPress={() => { }}
+                onPress={() => router.push('/(app)/language')}
               />
             </GlassCard>
           </Animated.View>
 
           {/* Support */}
-          <Animated.View entering={FadeInDown.delay(500).duration(400)}>
+          <Animated.View entering={FadeInDown.delay(400).duration(400)}>
             <Text variant="labelLarge" style={[styles.sectionLabel, { color: colors.textSecondary }]}>
               Support
             </Text>
             <GlassCard padding="none" style={styles.settingsCard}>
-              <SettingItem
-                icon="help-circle"
-                title="Help Center"
-                onPress={() => { }}
-              />
-              <Divider style={{ backgroundColor: colors.border }} />
               <SettingItem
                 icon="information"
                 title="About SpendX"
@@ -252,13 +315,13 @@ export default function ProfileScreen() {
               <SettingItem
                 icon="star"
                 title="Rate the App"
-                onPress={() => { }}
+                onPress={() => router.push('/(app)/rate-app')}
               />
             </GlassCard>
           </Animated.View>
 
           {/* Danger Zone */}
-          <Animated.View entering={FadeInDown.delay(600).duration(400)}>
+          <Animated.View entering={FadeInDown.delay(500).duration(400)}>
             <GlassCard padding="none" style={styles.settingsCard}>
               <SettingItem
                 icon="logout"
@@ -278,6 +341,11 @@ export default function ProfileScreen() {
 }
 
 const styles = StyleSheet.create({
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   scrollContent: {
     paddingBottom: 100, // More padding for bottom
     flexGrow: 1,

@@ -48,12 +48,13 @@ export default function AppLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
+        tabBarShowLabel: true,
         tabBarStyle: {
           backgroundColor: colors.tabBar,
           borderTopColor: colors.tabBarBorder,
           borderTopWidth: 1,
-          height: Platform.OS === 'ios' ? 80 : 60, // Smaller height
-          paddingBottom: Platform.OS === 'ios' ? 24 : 8, // Less padding
+          height: Platform.OS === 'ios' ? 80 : 65,
+          paddingBottom: Platform.OS === 'ios' ? 24 : 10,
           paddingTop: 8,
           paddingHorizontal: Spacing.xs,
           ...(Platform.OS === 'web' ? {
@@ -70,8 +71,8 @@ export default function AppLayout() {
         tabBarInactiveTintColor: colors.tabInactive,
         tabBarLabelStyle: {
           fontWeight: '600',
-          fontSize: 10, // Smaller font
-          marginTop: 0,
+          fontSize: 11,
+          marginTop: 4,
         },
         tabBarItemStyle: {
           paddingVertical: 2,
@@ -123,9 +124,15 @@ export default function AppLayout() {
           ),
         }}
       />
-      {/* Hidden Screens */}
+      {/* Hidden Screens - Not shown in tab bar */}
       <Tabs.Screen name="about" options={{ href: null }} />
       <Tabs.Screen name="explore" options={{ href: null }} />
+      <Tabs.Screen name="edit-profile" options={{ href: null }} />
+      <Tabs.Screen name="change-password" options={{ href: null }} />
+      <Tabs.Screen name="notifications" options={{ href: null }} />
+      <Tabs.Screen name="language" options={{ href: null }} />
+      <Tabs.Screen name="currency" options={{ href: null }} />
+      <Tabs.Screen name="rate-app" options={{ href: null }} />
     </Tabs>
   );
 }

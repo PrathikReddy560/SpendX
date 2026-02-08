@@ -2,10 +2,13 @@
 // FastAPI backend endpoint configurations and types
 
 // Base URL configuration
+// Use localhost for browser/laptop, use IP for mobile device
 const DEV_API_URL = 'http://localhost:8000';
 const PROD_API_URL = 'https://api.spendx.io'; // Replace with actual production URL
 
-export const API_BASE_URL = __DEV__ ? DEV_API_URL : PROD_API_URL;
+// @ts-ignore - __DEV__ is available in React Native
+export const API_BASE_URL = typeof __DEV__ !== 'undefined' && __DEV__ ? DEV_API_URL : PROD_API_URL;
+export const API_TIMEOUT = 30000;
 
 // API Endpoints
 export const Endpoints = {
@@ -15,48 +18,38 @@ export const Endpoints = {
         signup: '/api/auth/signup',
         logout: '/api/auth/logout',
         refresh: '/api/auth/refresh',
-        forgotPassword: '/api/auth/forgot-password',
-        resetPassword: '/api/auth/reset-password',
-        verifyEmail: '/api/auth/verify-email',
     },
 
     // User endpoints
     user: {
-        profile: '/api/user/profile',
-        updateProfile: '/api/user/profile',
-        uploadAvatar: '/api/user/avatar',
-        preferences: '/api/user/preferences',
-        deleteAccount: '/api/user/delete',
+        profile: '/api/users/me',
+        updateProfile: '/api/users/me',
     },
 
     // Transaction endpoints
     transactions: {
         list: '/api/transactions',
         create: '/api/transactions',
+        get: (id: string) => `/api/transactions/${id}`,
         update: (id: string) => `/api/transactions/${id}`,
         delete: (id: string) => `/api/transactions/${id}`,
         categories: '/api/transactions/categories',
         summary: '/api/transactions/summary',
-        monthly: '/api/transactions/monthly',
     },
 
     // Budget endpoints
     budget: {
-        current: '/api/budget/current',
-        create: '/api/budget',
-        update: '/api/budget',
-        history: '/api/budget/history',
-        goals: '/api/budget/goals',
+        current: '/api/budgets/current',
+        create: '/api/budgets',
+        history: '/api/budgets/history',
     },
 
     // AI endpoints
     ai: {
         chat: '/api/ai/chat',
-        analyze: '/api/ai/analyze',
+        chatHistory: (id: string) => `/api/ai/chat/${id}`,
         predict: '/api/ai/predict',
-        categorize: '/api/ai/categorize',
         insights: '/api/ai/insights',
-        recommendations: '/api/ai/recommendations',
     },
 
     // Reports endpoints
@@ -185,21 +178,18 @@ export interface APIError {
     details?: Record<string, string>;
 }
 
-// Categories configuration
+// Categories configuration (IDs match backend database)
 export const Categories = [
-    { id: 'food', label: 'Food & Dining', icon: 'food', color: '#EF4444' },
-    { id: 'transport', label: 'Transport', icon: 'car', color: '#3B82F6' },
-    { id: 'shopping', label: 'Shopping', icon: 'shopping', color: '#8B5CF6' },
-    { id: 'entertainment', label: 'Entertainment', icon: 'movie', color: '#EC4899' },
-    { id: 'bills', label: 'Bills & Utilities', icon: 'file-document', color: '#F59E0B' },
-    { id: 'health', label: 'Health', icon: 'hospital', color: '#22C55E' },
-    { id: 'education', label: 'Education', icon: 'school', color: '#06B6D4' },
-    { id: 'income', label: 'Income', icon: 'cash-plus', color: '#10B981' },
-    { id: 'other', label: 'Other', icon: 'dots-horizontal', color: '#6B7280' },
+    { id: 1, label: 'Food & Dining', icon: 'food', color: '#EF4444' },
+    { id: 2, label: 'Transport', icon: 'car', color: '#3B82F6' },
+    { id: 3, label: 'Shopping', icon: 'shopping', color: '#8B5CF6' },
+    { id: 4, label: 'Entertainment', icon: 'movie', color: '#EC4899' },
+    { id: 5, label: 'Bills & Utilities', icon: 'file-document', color: '#F59E0B' },
+    { id: 6, label: 'Health', icon: 'hospital', color: '#22C55E' },
+    { id: 7, label: 'Education', icon: 'school', color: '#06B6D4' },
+    { id: 8, label: 'Income', icon: 'cash-plus', color: '#10B981' },
+    { id: 9, label: 'Other', icon: 'dots-horizontal', color: '#6B7280' },
 ];
-
-// Request timeout
-export const API_TIMEOUT = 30000; // 30 seconds
 
 // Pagination defaults
 export const PAGINATION = {

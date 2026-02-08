@@ -35,3 +35,11 @@ npx expo start
 ## License
 
 MIT License
+ 
+
+ frontend run: cd mobile-app
+ npx expo start
+
+ backend run: cd backend
+ .\venv\Scripts\activate
+ uvicorn app.main:app --reload --host [IP_ADDRESS] --port 8000
