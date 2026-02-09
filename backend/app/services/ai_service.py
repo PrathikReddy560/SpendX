@@ -9,7 +9,7 @@ from typing import Optional, List
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
 
-import google.generativeai as genai
+from app.services.gemini_client import get_gemini_client, GeminiStatus
 
 from app.config import settings
 from app.models.chat import ChatMessage, ChatRole
@@ -42,12 +42,8 @@ class AIService:
     
     def __init__(self, db: AsyncSession):
         self.db = db
-        # Configure Gemini
-        if settings.gemini_api_key:
-            genai.configure(api_key=settings.gemini_api_key)
-            self.model = genai.GenerativeModel("gemini-2.0-flash")
-        else:
-            self.model = None
+        # Use production-ready Gemini client with retry and fallback
+        self.gemini = get_gemini_client(settings.gemini_api_key)
     
     async def chat(
         self,
@@ -95,16 +91,17 @@ class AIService:
         # Build context
         context = format_spending_context(expense_dicts, summary_dict)
         
-        # Generate AI response
-        if self.model:
-            full_prompt = SYSTEM_PROMPT.format(context=context)
-            full_prompt += "\n\n" + CHAT_PROMPT_TEMPLATE.format(message=request.message)
-            
-            try:
-                response = self.model.generate_content(full_prompt)
-                ai_response = response.text
-            except Exception as e:
-                ai_response = f"I apologize, but I'm having trouble processing your request. Please try again. (Error: {str(e)[:50]})"
+        # Generate AI response using production-ready client
+        full_prompt = SYSTEM_PROMPT.format(context=context)
+        full_prompt += "\n\n" + CHAT_PROMPT_TEMPLATE.format(message=request.message)
+        
+        if self.gemini.is_configured:
+            result = await self.gemini.generate(full_prompt)
+            if result.success:
+                ai_response = result.content
+            else:
+                # Use fallback on API failure
+                ai_response = self._generate_mock_response(request.message, summary_dict)
         else:
             # Fallback when no API key
             ai_response = self._generate_mock_response(request.message, summary_dict)
@@ -193,21 +190,21 @@ class AIService:
             },
         }
         
-        if self.model and monthly_data:
-            # Use Gemini for prediction
+        if self.gemini.is_configured and monthly_data:
+            # Use Gemini for prediction with retry/fallback
             history_str = format_history_for_prediction(monthly_data)
             prompt = PREDICTION_PROMPT.format(
                 spending_history=history_str,
                 current_month=json.dumps(current_month_data, indent=2),
             )
             
-            try:
-                response = self.model.generate_content(prompt)
-                # Try to parse JSON from response
-                prediction_data = self._parse_json_response(response.text)
-                return self._build_prediction_response(prediction_data, monthly_data)
-            except Exception:
-                pass
+            result = await self.gemini.generate(prompt)
+            if result.success:
+                try:
+                    prediction_data = self._parse_json_response(result.content)
+                    return self._build_prediction_response(prediction_data, monthly_data)
+                except Exception:
+                    pass
         
         # Fallback prediction based on averages
         return self._generate_fallback_prediction(monthly_data, current_summary)
@@ -240,30 +237,31 @@ class AIService:
                 "pct_used": budget.percentage_used,
             }
         
-        if self.model:
+        if self.gemini.is_configured:
             prompt = INSIGHTS_PROMPT.format(
                 spending_data=json.dumps(spending_data, indent=2),
                 budget_status=json.dumps(budget_status, indent=2) if budget_status else "No budget set",
             )
             
-            try:
-                response = self.model.generate_content(prompt)
-                insights_data = self._parse_json_response(response.text)
-                if isinstance(insights_data, list):
-                    return InsightsResponse(
-                        insights=[
-                            AIInsight(
-                                type=InsightType(i.get("type", "tip")),
-                                title=i.get("title", "Insight"),
-                                description=i.get("description", ""),
-                                icon=i.get("icon", "lightbulb-on"),
-                            )
-                            for i in insights_data[:3]
-                        ],
-                        generated_at=datetime.now(),
-                    )
-            except Exception:
-                pass
+            result = await self.gemini.generate(prompt)
+            if result.success:
+                try:
+                    insights_data = self._parse_json_response(result.content)
+                    if isinstance(insights_data, list):
+                        return InsightsResponse(
+                            insights=[
+                                AIInsight(
+                                    type=InsightType(i.get("type", "tip")),
+                                    title=i.get("title", "Insight"),
+                                    description=i.get("description", ""),
+                                    icon=i.get("icon", "lightbulb-on"),
+                                )
+                                for i in insights_data[:3]
+                            ],
+                            generated_at=datetime.now(),
+                        )
+                except Exception:
+                    pass
         
         # Fallback insights
         return self._generate_fallback_insights(summary, budget)

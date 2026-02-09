@@ -16,6 +16,7 @@ from app.schemas.ai import (
 )
 from app.services.ai_service import AIService
 from app.utils.security import get_current_user
+from app.middleware.rate_limit import check_rate_limit
 
 
 router = APIRouter(prefix="/ai", tags=["AI"])
@@ -28,6 +29,9 @@ async def chat(
     db: AsyncSession = Depends(get_db),
 ):
     """Chat with AI assistant about finances."""
+    # Apply rate limiting (10 requests per minute per user)
+    check_rate_limit(str(current_user.id))
+    
     service = AIService(db)
     return await service.chat(current_user, request)
 
@@ -49,6 +53,9 @@ async def get_prediction(
     db: AsyncSession = Depends(get_db),
 ):
     """Get AI-powered spending prediction for next month."""
+    # Apply rate limiting
+    check_rate_limit(str(current_user.id))
+    
     service = AIService(db)
     return await service.get_prediction(current_user)
 
@@ -59,5 +66,9 @@ async def get_insights(
     db: AsyncSession = Depends(get_db),
 ):
     """Get AI-generated spending insights."""
+    # Apply rate limiting
+    check_rate_limit(str(current_user.id))
+    
     service = AIService(db)
     return await service.get_insights(current_user)
+

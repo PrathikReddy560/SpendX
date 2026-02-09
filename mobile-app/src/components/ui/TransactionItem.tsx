@@ -18,6 +18,7 @@ interface TransactionItemProps {
     date: string;
     type: 'income' | 'expense';
     description?: string;
+    currencySymbol?: string;
     onPress?: () => void;
     style?: ViewStyle;
     delay?: number;
@@ -31,6 +32,7 @@ export default function TransactionItem({
     date,
     type,
     description,
+    currencySymbol = '₹',
     onPress,
     style,
     delay = 0,
@@ -39,13 +41,13 @@ export default function TransactionItem({
     const isDark = theme.dark;
     const colors = isDark ? Colors.dark : Colors.light;
 
-    // Get category info
-    const categoryInfo = Categories.find(c => c.id === category) || Categories[Categories.length - 1];
+    // Get category info (category is the icon name passed from dashboard)
+    const categoryInfo = Categories.find(c => c.icon === category) || Categories[Categories.length - 1];
     const categoryColor = colors.categories[category as keyof typeof colors.categories] || colors.textSecondary;
 
     const formattedAmount = type === 'income'
-        ? `+$${amount.toLocaleString()}`
-        : `-$${amount.toLocaleString()}`;
+        ? `+${currencySymbol}${amount.toLocaleString()}`
+        : `-${currencySymbol}${amount.toLocaleString()}`;
 
     const amountColor = type === 'income' ? colors.success : colors.error;
 

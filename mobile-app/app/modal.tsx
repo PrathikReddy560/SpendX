@@ -13,6 +13,7 @@ import AnimatedButton from '../src/components/ui/AnimatedButton';
 import CategoryChip from '../src/components/ui/CategoryChip';
 import { Colors } from '../src/config/colors';
 import { Spacing, BorderRadius } from '../src/config/theme';
+import useCurrency from '../src/hooks/useCurrency';
 
 const categories = [
   { id: 'food', label: 'Food', icon: 'food', color: '#EF4444' },
@@ -34,6 +35,7 @@ export default function Modal() {
   const [description, setDescription] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('food');
   const [loading, setLoading] = useState(false);
+  const { symbol: currencySymbol } = useCurrency();
 
   const handleSave = async () => {
     if (!amount) return;
@@ -68,7 +70,7 @@ export default function Modal() {
 
         {/* Amount */}
         <View style={styles.amountContainer}>
-          <Text style={[styles.currencySymbol, { color: colors.textSecondary }]}>$</Text>
+          <Text style={[styles.currencySymbol, { color: colors.textSecondary }]}>{currencySymbol}</Text>
           <TextInput
             value={amount}
             onChangeText={setAmount}

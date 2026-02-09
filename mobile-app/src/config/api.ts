@@ -2,8 +2,9 @@
 // FastAPI backend endpoint configurations and types
 
 // Base URL configuration
-// Use localhost for browser/laptop, use IP for mobile device
-const DEV_API_URL = 'http://localhost:8000';
+// Use your computer's local IP for mobile device access
+// Change this IP if your network changes!
+const DEV_API_URL = 'http://10.19.33.57:8000';
 const PROD_API_URL = 'https://api.spendx.io'; // Replace with actual production URL
 
 // @ts-ignore - __DEV__ is available in React Native

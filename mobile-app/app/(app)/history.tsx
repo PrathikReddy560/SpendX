@@ -16,6 +16,7 @@ import GlassCard from '../../src/components/ui/GlassCard';
 import { Colors } from '../../src/config/colors';
 import { Spacing, BorderRadius } from '../../src/config/theme';
 import { API_BASE_URL, Endpoints } from '../../src/config/api';
+import useCurrency from '../../src/hooks/useCurrency';
 
 const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const currentMonth = new Date().getMonth();
@@ -60,6 +61,7 @@ export default function HistoryScreen() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [userEmail, setUserEmail] = useState('');
   const [summary, setSummary] = useState({ totalSpent: 0, totalIncome: 0 });
+  const { symbol: currencySymbol, refresh: refreshCurrency } = useCurrency();
 
   const fetchData = useCallback(async () => {
     try {
@@ -103,7 +105,8 @@ export default function HistoryScreen() {
   useFocusEffect(
     useCallback(() => {
       fetchData();
-    }, [fetchData])
+      refreshCurrency();
+    }, [fetchData, refreshCurrency])
   );
 
   const onRefresh = useCallback(() => {
@@ -221,7 +224,7 @@ export default function HistoryScreen() {
                     Total Spent
                   </Text>
                   <Text variant="titleMedium" style={[styles.summaryAmount, { color: colors.text }]}>
-                    ${summary.totalSpent.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                    {currencySymbol}{summary.totalSpent.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                   </Text>
                 </View>
               </View>
@@ -234,7 +237,7 @@ export default function HistoryScreen() {
                     Total Income
                   </Text>
                   <Text variant="titleMedium" style={[styles.summaryAmount, { color: colors.text }]}>
-                    ${summary.totalIncome.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                    {currencySymbol}{summary.totalIncome.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                   </Text>
                 </View>
               </View>
@@ -295,6 +298,7 @@ export default function HistoryScreen() {
                     <TransactionItem
                       key={transaction.id}
                       {...transaction}
+                      currencySymbol={currencySymbol}
                       delay={groupIndex * 50 + index * 30}
                     />
                   ))}

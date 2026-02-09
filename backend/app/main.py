@@ -38,6 +38,19 @@ async def lifespan(app: FastAPI):
     await create_tables()
     print("✅ Database tables created")
     await seed_categories()
+    
+    # Validate Gemini API key
+    if settings.gemini_api_key:
+        from app.services.gemini_client import get_gemini_client
+        client = get_gemini_client(settings.gemini_api_key)
+        is_valid, status_msg = await client.validate_api_key()
+        if is_valid:
+            print(f"✅ Gemini API key validated: {status_msg}")
+        else:
+            print(f"⚠️  Gemini API: {status_msg} - using fallback responses")
+    else:
+        print("⚠️  No Gemini API key configured - using fallback responses")
+    
     print("✅ SpendX Backend ready!")
     
     yield
@@ -56,11 +69,15 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# Configure CORS
+# Configure CORS - allow all origins for mobile dev
+cors_origins = settings.cors_origins_list
+if "*" in cors_origins or settings.cors_origins.strip() == "*":
+    cors_origins = ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins_list,
-    allow_credentials=True,
+    allow_origins=cors_origins,
+    allow_credentials=True if cors_origins != ["*"] else False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -87,8 +104,14 @@ async def root():
 @app.get("/health")
 async def health_check():
     """Detailed health check."""
+    ai_status = "not configured"
+    if settings.gemini_api_key:
+        from app.services.gemini_client import get_gemini_client
+        client = get_gemini_client(settings.gemini_api_key)
+        ai_status = "configured" if client.is_configured else "error"
+    
     return {
         "status": "healthy",
         "database": "connected",
-        "ai": "available" if settings.gemini_api_key else "not configured",
+        "ai": ai_status,
     }

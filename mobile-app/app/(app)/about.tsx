@@ -48,7 +48,7 @@ const upiApps = [
 ];
 
 const team = [
-  { name: 'Prath', role: 'Founder & Developer', avatar: '👨‍💻' },
+  { name: 'Prathik & Padhmashri', role: 'Founder & Developer', avatar: '👨‍💻' },
 ];
 
 export default function AboutScreen() {

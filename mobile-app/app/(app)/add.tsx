@@ -22,6 +22,7 @@ import { Colors } from '../../src/config/colors';
 import { Spacing, BorderRadius } from '../../src/config/theme';
 import AnimatedButton from '../../src/components/ui/AnimatedButton';
 import { API_BASE_URL, Endpoints, Categories } from '../../src/config/api';
+import useCurrency from '../../src/hooks/useCurrency';
 
 type TransactionType = 'expense' | 'income';
 
@@ -39,6 +40,7 @@ export default function AddTransactionScreen() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState(false);
+    const { symbol: currencySymbol } = useCurrency();
 
     // Filter categories: Income (8) for income type, all others for expense
     const filteredCategories = Categories.filter(cat =>
@@ -134,7 +136,7 @@ export default function AddTransactionScreen() {
 
                 {/* Amount Input */}
                 <View style={styles.amountContainer}>
-                    <Text style={styles.currencySymbol}>$</Text>
+                    <Text style={styles.currencySymbol}>{currencySymbol}</Text>
                     <TextInput
                         value={amount}
                         onChangeText={setAmount}

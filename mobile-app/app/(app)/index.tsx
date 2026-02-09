@@ -17,6 +17,7 @@ import GlassCard from '../../src/components/ui/GlassCard';
 import { Colors } from '../../src/config/colors';
 import { Spacing, BorderRadius } from '../../src/config/theme';
 import { API_BASE_URL, Endpoints } from '../../src/config/api';
+import useCurrency from '../../src/hooks/useCurrency';
 
 // Category icon mapping
 const categoryIcons: Record<string, string> = {
@@ -68,6 +69,7 @@ export default function Dashboard() {
     balance: 0,
   });
   const [userName, setUserName] = useState('User');
+  const { symbol: currencySymbol, refresh: refreshCurrency } = useCurrency();
 
   const fetchData = useCallback(async () => {
     try {
@@ -121,7 +123,8 @@ export default function Dashboard() {
   useFocusEffect(
     useCallback(() => {
       fetchData();
-    }, [fetchData])
+      refreshCurrency(); // Refresh currency in case it changed
+    }, [fetchData, refreshCurrency])
   );
 
   const onRefresh = useCallback(() => {
@@ -206,7 +209,7 @@ export default function Dashboard() {
                   <View>
                     <Text style={styles.balanceLabel}>Total Balance</Text>
                     <Text style={styles.balanceAmount}>
-                      ${(summary.balance).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      {currencySymbol}{(summary.balance).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                     </Text>
                   </View>
                   <View style={styles.balanceChange}>
@@ -230,6 +233,7 @@ export default function Dashboard() {
               title="Income"
               value={summary.totalIncome}
               formatAsCurrency
+              currencySymbol={currencySymbol}
               icon="arrow-down-circle"
               iconColor={colors.success}
               delay={100}
@@ -238,6 +242,7 @@ export default function Dashboard() {
               title="Expenses"
               value={summary.totalExpense}
               formatAsCurrency
+              currencySymbol={currencySymbol}
               icon="arrow-up-circle"
               iconColor={colors.error}
               delay={150}
@@ -247,6 +252,7 @@ export default function Dashboard() {
                 title="Savings"
                 value={summary.balance}
                 formatAsCurrency
+                currencySymbol={currencySymbol}
                 icon="piggy-bank"
                 variant="gradient"
                 delay={200}
@@ -312,6 +318,7 @@ export default function Dashboard() {
                 <TransactionItem
                   key={transaction.id}
                   {...transaction}
+                  currencySymbol={currencySymbol}
                   delay={index * 50}
                 />
               ))
