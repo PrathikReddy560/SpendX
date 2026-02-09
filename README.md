@@ -12,6 +12,25 @@ A modern personal finance application built with React Native (Expo) for mobile/
 
 ---
 
+## 🚀 Gemini API Integration
+
+SpendX leverages the **Google Gemini API** as the core intelligence engine powering three central features of the application:
+
+### 1. AI Financial Chat Assistant
+The chat feature uses **Gemini's conversational AI capabilities** to provide users with a personal financial advisor. Users can ask natural language questions like "How much did I spend on food this month?" or "Give me tips to save money." The system sends user queries along with their transaction context to Gemini, which generates personalized, context-aware responses. The chat maintains conversation history for coherent multi-turn discussions.
+
+### 2. Smart Spending Insights
+Gemini analyzes the user's transaction patterns to generate **actionable financial insights**. By processing expense data, categories, and spending trends, the AI identifies areas of overspending, suggests budget optimizations, and highlights positive financial behaviors. These insights are presented as bite-sized tips that help users make informed financial decisions.
+
+### 3. Expense Predictions
+Using historical spending data, Gemini provides **predictive analytics** for future expenses. The AI forecasts next month's estimated spending, identifies potential savings opportunities, and assesses financial risk levels based on current spending patterns.
+
+The integration includes production-ready features: **exponential backoff retry logic**, **automatic model fallback** (trying multiple Gemini models if one fails), **rate limiting** to prevent API abuse, and **graceful degradation** with helpful fallback responses when API limits are reached.
+
+**GitHub Repository:** [https://github.com/PrathikReddy560/SpendX](https://github.com/PrathikReddy560/SpendX)
+
+---
+
 ## ✨ Features
 
 ### 📊 **Expense Tracking**
