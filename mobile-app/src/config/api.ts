@@ -2,13 +2,14 @@
 // FastAPI backend endpoint configurations and types
 
 // Base URL configuration
-// Use your computer's local IP for mobile device access
-// Change this IP if your network changes!
+// DEV: Local IP for mobile testing
+// PROD: Render deployment URL (update this after deploying backend)
 const DEV_API_URL = 'http://10.19.33.57:8000';
-const PROD_API_URL = 'https://api.spendx.io'; // Replace with actual production URL
+const PROD_API_URL = 'https://spendx-api.onrender.com'; // UPDATE THIS with your Render URL
 
-// @ts-ignore - __DEV__ is available in React Native
-export const API_BASE_URL = typeof __DEV__ !== 'undefined' && __DEV__ ? DEV_API_URL : PROD_API_URL;
+// Detect environment - use production URL for web builds
+const isProduction = typeof window !== 'undefined' && window.location.hostname !== 'localhost';
+export const API_BASE_URL = isProduction ? PROD_API_URL : DEV_API_URL;
 export const API_TIMEOUT = 30000;
 
 // API Endpoints
